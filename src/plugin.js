@@ -27,29 +27,49 @@ class Plugin extends StromboliPlugin {
         });
 
         var template = hbs.compile(ast);
-        var dataFile = path.join(path.dirname(file), 'demo.json');
 
-        var done = function (hbsRenderResult) {
-          renderResult.addBinary('index.html', hbsRenderResult);
+        return that.getTemplateData(file).then(
+          function (result) {
+            result.files.forEach(function(file) {
+              renderResult.addDependency(file);
+            });
 
-          return renderResult;
-        };
+            var binary = template(result.data);
 
-        return that.exists(dataFile).then(
-          function () {
-            return readJSON(dataFile).then(
-              function (data) {
-                return done(template(data));
-              }
-            );
-          },
-          function () {
-            return done(template(null));
+            renderResult.addBinary('index.html', binary);
+
+            return renderResult;
           }
         );
       },
       function (err) {
         return Promise.reject(err);
+      }
+    );
+  }
+
+  getTemplateData(file) {
+    var that = this;
+    var dataFile = path.join(path.dirname(file), 'demo.json');
+
+    var result = {
+      files: [],
+      data: null
+    };
+
+    return that.exists(dataFile).then(
+      function () {
+        return readJSON(dataFile).then(
+          function (data) {
+            result.files.push(dataFile);
+            result.data = data;
+
+            return result;
+          }
+        )
+      },
+      function () {
+        return result;
       }
     );
   }
