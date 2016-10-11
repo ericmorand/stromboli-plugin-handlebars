@@ -3,10 +3,21 @@ var fs = require('fs-extra');
 var path = require('path');
 
 var Promise = require('promise');
-var Handlebars = require('handlebars');
 var readJSON = Promise.denodeify(fs.readJSON);
 
 class Plugin extends StromboliPlugin {
+  /**
+   *
+   * @param config {Object}
+   * @param name {String}
+   * @param entry {String}
+   */
+  constructor(config, name, entry) {
+    super(config, name, entry);
+
+    this.handlebars = require('handlebars').create();
+  }
+
   /**
    *
    * @param file {String}
@@ -18,32 +29,37 @@ class Plugin extends StromboliPlugin {
 
     return that.readFile(file).then(
       function (readResult) {
-        var hbs = Handlebars.create();
-        var ast = hbs.parse(readResult);
-        var dependencies = that.findPartialDependencies(ast, hbs).add(file);
+        var hbs = that.handlebars;
 
-        dependencies.forEach(function (dependency) {
-          renderResult.addDependency(dependency);
-        });
+        return that._parse(hbs, readResult, file).then(
+          function (ast) {
+            return that.findPartialDependencies(ast, hbs, file).then(
+              function (dependencies) {
+                dependencies.add(file);
 
-        var template = hbs.compile(ast);
+                dependencies.forEach(function (dependency) {
+                  renderResult.addDependency(dependency);
+                });
 
-        return that.getTemplateData(file).then(
-          function (result) {
-            result.files.forEach(function(file) {
-              renderResult.addDependency(file);
-            });
+                var template = hbs.compile(ast);
 
-            var binary = template(result.data);
+                return that.getTemplateData(file).then(
+                  function (result) {
+                    result.files.forEach(function (file) {
+                      renderResult.addDependency(file);
+                    });
 
-            renderResult.addBinary('index.html', binary);
+                    var binary = template(result.data);
 
-            return renderResult;
+                    renderResult.addBinary('index.html', binary);
+
+                    return renderResult;
+                  }
+                );
+              }
+            )
           }
         );
-      },
-      function (err) {
-        return Promise.reject(err);
       }
     );
   }
@@ -74,43 +90,81 @@ class Plugin extends StromboliPlugin {
     );
   }
 
-  findPartialDependencies(nodes, hbs) {
+  findPartialDependencies(nodes, hbs, file) {
+    var that = this;
     var results = new Set();
 
     if (nodes && nodes.body) {
-      results = this.recursiveNodeSearch(nodes.body, results, hbs);
+      return that.recursiveNodeSearch(nodes.body, results, hbs, file);
     }
-
-    return results;
+    else {
+      return Promise.resolve([]);
+    }
   };
 
-  recursiveNodeSearch(statements, results, hbs) {
-    var that = this;
+  _parse(hbs, data, file) {
+    return new Promise(function (fulfill, reject) {
+      try {
+        var ast = hbs.parse(data);
 
-    statements.forEach(function (statement) {
-      if (statement && statement.type && statement.type === 'PartialStatement') {
-        var partialName = statement.name.original;
-        var partialPath = path.resolve(path.join('src', partialName + '.hbs')); // todo: 'src' is unknown at this point, should be sent by Stromboli at runtime
-        var readResult = fs.readFileSync(partialPath).toString();
-        var nodes = hbs.parse(readResult);
-
-        hbs.registerPartial(partialName, readResult);
-
-        that.recursiveNodeSearch(nodes.body, results, hbs);
-
-        results.add(partialPath);
+        fulfill(ast);
       }
+      catch (err) {
+        var error = {
+          file: file,
+          message: err
+        };
 
-      if (statement && statement.program && statement.program.body) {
-        that.recursiveNodeSearch(statement.program.body, results, hbs);
-      }
-
-      if (statement && statement.inverse && statement.inverse.body) {
-        that.recursiveNodeSearch(statement.inverse.body, results, hbs);
+        reject(error);
       }
     });
+  };
 
-    return results;
+  recursiveNodeSearch(statements, results, hbs, file) {
+    var that = this;
+
+    return Promise.all(statements.map(function (statement) {
+      if (statement) {
+        if (statement.type && statement.type === 'PartialStatement') {
+          var partialName = statement.name.original;
+          var partialPath = path.resolve(path.join('src', partialName + '.hbs')); // todo: 'src' is unknown at this point, should be sent by Stromboli at runtime
+
+          return that.readFile(partialPath).then(
+            function (readResult) {
+              return that._parse(hbs, readResult, partialPath).then(
+                function (nodes) {
+                  hbs.registerPartial(partialName, readResult);
+
+                  return that.recursiveNodeSearch(nodes.body, results, hbs, partialPath).then(
+                    function () {
+                      results.add(partialPath);
+                    }
+                  );
+                }
+              );
+            },
+            function (err) {
+              var error = {
+                file: file,
+                message: err.message
+              };
+
+              return Promise.reject(error);
+            }
+          )
+        }
+        else if (statement.program && statement.program.body) {
+          return that.recursiveNodeSearch(statement.program.body, results, hbs, file);
+        }
+        else if (statement.inverse && statement.inverse.body) {
+          return that.recursiveNodeSearch(statement.inverse.body, results, hbs, file);
+        }
+      }
+    })).then(
+      function () {
+        return results;
+      }
+    );
   }
 }
 
