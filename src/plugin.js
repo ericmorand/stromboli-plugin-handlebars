@@ -3,10 +3,21 @@ var fs = require('fs-extra');
 var path = require('path');
 
 var Promise = require('promise');
-var Handlebars = require('handlebars');
 var readJSON = Promise.denodeify(fs.readJSON);
 
 class Plugin extends StromboliPlugin {
+  /**
+   *
+   * @param config {Object}
+   * @param name {String}
+   * @param entry {String}
+   */
+  constructor(config, name, entry) {
+    super(config, name, entry);
+
+    this.handlebars = require('handlebars').create();
+  }
+
   /**
    *
    * @param file {String}
@@ -18,7 +29,7 @@ class Plugin extends StromboliPlugin {
 
     return that.readFile(file).then(
       function (readResult) {
-        var hbs = Handlebars.create();
+        var hbs = that.handlebars;
         var ast = hbs.parse(readResult);
         var dependencies = that.findPartialDependencies(ast, hbs).add(file);
 
