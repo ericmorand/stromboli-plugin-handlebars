@@ -4,15 +4,17 @@
   "description": "",
   "main": "src/plugin.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "tap test/*.js --cov"
   },
   "author": "Eric MORAND",
   "dependencies": {
     "fs-extra": "^0.30.0",
-    "handlebars": "^4.0.5",
-    "promise": "^7.1.1",
-    "stromboli-plugin": "^0.1.0"
+    "handlebars": "^4.0.5"
   },
   "repository": "ericmorand/stromboli-plugin-handlebars",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "stromboli": "^0.4.0",
+    "tap": "^7.1.2"
+  }
 }
